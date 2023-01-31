@@ -5,7 +5,7 @@ from functools import partial
 
 class HTuckerNode(object):
     def __init__(self, content):
-        # content is either a [left, right] or a leaf of torch.Tensor type
+        # content is either a [left, core, right] or a leaf of torch.Tensor type
         # now no initialisation is done automatically,
         # so we just pass handcrafted version of content
         # content should contain only nested lists of 3-tensors
@@ -19,8 +19,10 @@ class HTuckerNode(object):
             self.content = content
             self.is_leaf = isinstance(self.content, torch.Tensor)
             if not self.is_leaf:
-                for i in range(len(self.content)):
-                    self.content[i] = HTuckerNode(self.content[i])
+                assert len(self.content) == 3
+                # for i in range(len(self.content)):
+                self.content[0] = HTuckerNode(self.content[0])
+                self.content[-1] = HTuckerNode(self.content[-1])
 
         self.verbose = 1
 
@@ -28,23 +30,71 @@ class HTuckerNode(object):
         if self.is_leaf:
             return buffer + str(self.content.shape) + "\n"
         else:
-            buffer_new = buffer + "|"
+            buffer_new = buffer + "|" + str(self.content[1].shape)
             l1 = self.content[0].__repr__(buffer=buffer_new)
-            l2 = self.content[1].__repr__(buffer=buffer_new)
+            l2 = self.content[-1].__repr__(buffer=buffer_new)
             return f"{l1}{buffer_new}\n{l2}"
 
-    def get_full(self):
+    def get_full(self, core_dimension_placement="left"):
+        # core dimension placement is either left of right
+        # for left tensor placement is right in vice versa
+        # what is done:
+        # (1, k, ..., k, r) * (r, r, r) * (r, k, ..., k, 1) = (1, k,..., k, r)
+        # it was a right placement example
         if self.is_leaf:
             return self.content
         else:
-            assert len(self.content) == 2
-            full_left = HTuckerNode(self.content[0]).get_full()
-            full_right = HTuckerNode(self.content[1]).get_full()
+            assert len(self.content) == 3
+            full_left = HTuckerNode(self.content[0]).get_full(
+                core_dimension_placement="right"
+            )
+            full_right = HTuckerNode(self.content[-1]).get_full(
+                core_dimension_placement="left"
+            )
+            core = self.content[1]
             if self.verbose >= 2:
-                print(full_left.shape, full_right.shape)
-            return torch.tensordot(full_left, full_right, dims=[[-1], [0]])
+                print(full_left.shape, core.shape, full_right.shape)
 
-    def scalar_product(self, right_node: "HTuckerNode"):
+            if core_dimension_placement == "left":
+                # there should be no other dims of size 1
+                l_res = torch.tensordot(full_left, core, dims=[[-1], [0]])
+                # shape (1, ..., r, r)
+                dims = list(range(len(l_res.shape)))
+                dims[0], dims[-2] = dims[-2], dims[0]
+                if self.verbose >= 2:
+                    print(dims)
+
+                l_res_prm = torch.permute(l_res, dims)
+                # shape (r, ..., 1, r)
+
+                l_res_prm = torch.squeeze(l_res_prm)
+                # shape (r, ..., r)
+                result = torch.tensordot(l_res_prm, full_right, dims=[[-1], [0]])
+
+                # shape (r, ..., 1)
+                return result
+
+            if core_dimension_placement == "right":
+                # there should be no other dims of size 1
+                r_res = torch.tensordot(core, full_right, dims=[[-1], [0]])
+                # shape (r, r, ..., 1)
+                dims = list(range(len(r_res.shape)))
+                dims[1], dims[-1] = dims[-1], dims[1]
+                if self.verbose >= 2:
+                    print(dims)
+
+                r_res_prm = torch.permute(r_res, dims)
+                # shape (r, 1, ..., r)
+                r_res_prm = torch.squeeze(r_res_prm)
+                # shape (r, ..., r)
+                result = torch.tensordot(full_left, r_res_prm, dims=[[-1], [0]])
+
+                # shape (1, ..., r)
+                return result
+
+    def scalar_product(
+        self, right_node: "HTuckerNode", core_dimension_placement="left"
+    ):
         # right Node is also of H Tucker format
         # returns 4-tensor
         if self.is_leaf:
@@ -55,12 +105,45 @@ class HTuckerNode(object):
             assert len(ans.shape) == 4
             return ans
         else:
-            assert len(self.content) == 2 and len(right_node.content) == 2
-            l_result = self.content[0].scalar_product(right_node.content[0])
-            r_result = self.content[1].scalar_product(right_node.content[1])
+            assert len(self.content) == 3 and len(right_node.content) == 3
+            l_result = self.content[0].scalar_product(
+                right_node.content[0], core_dimension_placement="right"
+            )
+            # shape (1, 1, r_1, r_2)
+            r_result = self.content[-1].scalar_product(
+                right_node.content[-1], core_dimension_placement="left"
+            )
+            # shape (r_1, r_2, 1, 1)
+            first_core = self.content[1]
+            # shape (r_1, r_1, r_1)
+            second_core = right_node.content[1]
+            # shape (r_2, r_2, r_2)
             if self.verbose >= 2:
-                print(l_result.shape, r_result.shape, "result shapes")
-            return torch.tensordot(l_result, r_result, dims=[[-2, -1], [0, 1]])
+                print(
+                    l_result.shape,
+                    r_result.shape,
+                    first_core.shape,
+                    second_core.shape,
+                    "result shapes",
+                )
+
+            if core_dimension_placement == "left":
+                return torch.einsum(
+                    "abij, ikl, jmn, lncd -> kmcd",
+                    l_result,
+                    first_core,
+                    second_core,
+                    r_result,
+                )
+
+            if core_dimension_placement == "right":
+                return torch.einsum(
+                    "abij, ikl, jmn, lncd -> abkm",
+                    l_result,
+                    first_core,
+                    second_core,
+                    r_result,
+                )
             # should check order, seems legit for now
             # order is like this [1_l, 2_l, 1_r, 2_r]
 
@@ -70,7 +153,8 @@ class HTuckerNode(object):
         else:
             return (
                 self.content[0].get_params_for_optim()
-                + self.content[1].get_params_for_optim()
+                + [self.content[1]]
+                + self.content[2].get_params_for_optim()
             )
 
 
@@ -128,7 +212,12 @@ class FunctionalHTuckerNode(HTuckerNode):
             left_size = self.content[0].get_dimension()
             x_left = x[:left_size]
             x_right = x[left_size:]
-            return [self.content[0].get_val(x_left), self.content[1].get_val(x_right)]
+            # this is a tensor of rank one, so middle core is very simple
+            return [
+                self.content[0].get_val(x_left),
+                torch.ones(1, 1, 1),
+                self.content[1].get_val(x_right),
+            ]
 
 
 def nsin(n, x):
