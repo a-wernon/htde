@@ -30,8 +30,12 @@ class HTuckerNode(object):
             if not self.is_leaf:
                 assert len(self.content) == 3
 
-                self.content[0] = HTuckerNode(self.content[0], make_optim=make_optim)
-                self.content[-1] = HTuckerNode(self.content[-1], make_optim=make_optim)
+                self.content[0] = HTuckerNode(
+                    self.content[0], make_optim=make_optim, device=device
+                )
+                self.content[-1] = HTuckerNode(
+                    self.content[-1], make_optim=make_optim, device=device
+                )
 
                 # batch unsqueeze for core
                 if len(self.content[1].shape) not in (3, 4):
@@ -231,7 +235,7 @@ class FunctionalHTuckerNode(HTuckerNode):
         else:
             return sum([node.get_dimension() for node in self.content])
 
-    def get_val(self, x):
+    def get_val(self, x, device="cpu"):
         """
         return content for h_t_node with value
         equal to execution of functional tensor in x
@@ -249,8 +253,10 @@ class FunctionalHTuckerNode(HTuckerNode):
             raise ValueError
 
         if self.is_leaf:
-            return torch.stack([f(x) for f in self.content]).reshape(
-                batch_size, 1, -1, 1
+            return (
+                torch.stack([f(x) for f in self.content])
+                .reshape(batch_size, 1, -1, 1)
+                .to(device)
             )
 
         else:
@@ -259,18 +265,24 @@ class FunctionalHTuckerNode(HTuckerNode):
             x_right = x[:, left_size:]
             # this is a tensor of rank one, so middle core is very simple
             return [
-                self.content[0].get_val(x_left),
-                torch.ones(batch_size, 1, 1, 1),
-                self.content[1].get_val(x_right),
+                self.content[0].get_val(x_left, device=device),
+                torch.ones(batch_size, 1, 1, 1).to(device),
+                self.content[1].get_val(x_right, device=device),
             ]
 
 
 def nsin(n, x):
-    return torch.sin(torch.Tensor(np.array([n * x])))
+    if not isinstance(x, torch.Tensor):
+        return torch.sin(torch.Tensor(np.array([n * x])))
+    else:
+        return torch.sin(n * x)
 
 
 def ncos(n, x):
-    return torch.cos(torch.Tensor(np.array([n * x])))
+    if not isinstance(x, torch.Tensor):
+        return torch.cos(torch.Tensor(np.array([n * x])))
+    else:
+        return torch.cos(n * x)
 
 
 def fourier_basis(n):
