@@ -19,8 +19,8 @@ class HTuckerNode(object):
                 elif len(self.content.shape) == 3:
                     self.content = torch.unsqueeze(self.content, 0)
                 if make_optim:
-                    self.content.requires_grad_()
                     self.content = self.content.to(device)
+                    self.content.requires_grad_()
             else:
                 self.content = content.content.copy()
             self.is_leaf = content.is_leaf
@@ -40,8 +40,8 @@ class HTuckerNode(object):
                     self.content[1] = torch.unsqueeze(self.content[1], 0)
 
                 if make_optim:
-                    self.content[1].requires_grad_()
                     self.content[1] = self.content[1].to(device)
+                    self.content[1].requires_grad_()
             else:
                 if len(self.content.shape) not in (3, 4):
                     raise ValueError
@@ -49,8 +49,8 @@ class HTuckerNode(object):
                     self.content = torch.unsqueeze(self.content, 0)
 
                 if make_optim:
-                    self.content.requires_grad_()
                     self.content = self.content.to(device)
+                    self.content.requires_grad_()
 
         self.verbose = 1
 
