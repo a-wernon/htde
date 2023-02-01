@@ -4,14 +4,22 @@ from functools import partial
 
 
 class HTuckerNode(object):
-    def __init__(self, content):
+    def __init__(self, content, make_optim=False):
         # content is either a [left, core, right] or a leaf of torch.Tensor type
         # now no initialisation is done automatically,
         # so we just pass handcrafted version of content
         # content should contain only nested lists of 3-tensors
+
+        # dim 0 of every tensor is now reserved for a batch
         if isinstance(content, HTuckerNode):
             if isinstance(content.content, torch.Tensor):
                 self.content = content.content.detach().clone()
+                if len(self.content.shape) not in (3, 4):
+                    raise ValueError
+                elif len(self.content.shape) == 3:
+                    self.content = torch.unsqueeze(self.content, 0)
+                if make_optim:
+                    self.content.requires_grad_()
             else:
                 self.content = content.content.copy()
             self.is_leaf = content.is_leaf
@@ -21,8 +29,26 @@ class HTuckerNode(object):
             if not self.is_leaf:
                 assert len(self.content) == 3
                 # for i in range(len(self.content)):
-                self.content[0] = HTuckerNode(self.content[0])
-                self.content[-1] = HTuckerNode(self.content[-1])
+                self.content[0] = HTuckerNode(self.content[0], make_optim=make_optim)
+                self.content[-1] = HTuckerNode(self.content[-1], make_optim=make_optim)
+
+                # batch unsqueeze for core
+                if len(self.content[1].shape) not in (3, 4):
+                    raise ValueError
+                elif len(self.content[1].shape) == 3:
+                    self.content[1] = torch.unsqueeze(self.content[1], 0)
+
+                if make_optim:
+                    self.content[1].requires_grad_()
+            else:
+                if len(self.content.shape) not in (3, 4):
+                    raise ValueError
+                elif len(self.content.shape) == 3:
+                    print("fd")
+                    self.content = torch.unsqueeze(self.content, 0)
+
+                if make_optim:
+                    self.content.requires_grad_()
 
         self.verbose = 1
 
@@ -39,7 +65,7 @@ class HTuckerNode(object):
         # core dimension placement is either left of right
         # for left tensor placement is right in vice versa
         # what is done:
-        # (1, k, ..., k, r) * (r, r, r) * (r, k, ..., k, 1) = (1, k,..., k, r)
+        # (b, 1, k, ..., k, r) * (b, r, r, r) * (b, r, k, ..., k, 1) = (b, 1, k,..., k, r)
         # it was a right placement example
         if self.is_leaf:
             return self.content
@@ -56,40 +82,77 @@ class HTuckerNode(object):
                 print(full_left.shape, core.shape, full_right.shape)
 
             if core_dimension_placement == "left":
-                # there should be no other dims of size 1
-                l_res = torch.tensordot(full_left, core, dims=[[-1], [0]])
-                # shape (1, ..., r, r)
+                """
+                return torch.einsum(
+                    "i...j, jkl, l...m -> k...m", full_left, core, full_right
+                )
+                torch does not allow ellipsises to be of a different shape
+                """
+                print(full_left.shape, core.shape)
+                l_res = torch.einsum("br...i, bijk -> bj...k", full_left, core)
+                """
+                # l_res = torch.tensordot(full_left, core, dims=[[-1], [1]])
+                # shape (b, 1, ..., r, r)
                 dims = list(range(len(l_res.shape)))
-                dims[0], dims[-2] = dims[-2], dims[0]
-                if self.verbose >= 2:
-                    print(dims)
+                dims[1], dims[-2] = dims[-2], dims[1]
 
                 l_res_prm = torch.permute(l_res, dims)
-                # shape (r, ..., 1, r)
+                # shape (b, r, ..., 1, r)
+                if self.verbose >= 2:
+                    print(dims, "l", l_res_prm.shape)
 
-                l_res_prm = torch.squeeze(l_res_prm)
-                # shape (r, ..., r)
-                result = torch.tensordot(l_res_prm, full_right, dims=[[-1], [0]])
-
-                # shape (r, ..., 1)
+                l_res_prm = torch.squeeze(l_res_prm, -2)
+                # shape (b, r, ..., r)
+                """
+                orig_shape = l_res.shape
+                result = torch.einsum(
+                    "baj, bj...-> ba...",
+                    l_res.reshape(orig_shape[0], -1, orig_shape[-1]),
+                    full_right,
+                ).view(*orig_shape[:-1], *full_right.shape[2:])
+                # torch.tensordot(l_res, full_right, dims=[[-1], [1]])
+                if self.verbose >= 2:
+                    print("rs", l_res.shape, full_right.shape)
+                    print("rs_fin", result.shape)
+                # shape (b, r, ..., 1)
                 return result
 
             if core_dimension_placement == "right":
-                # there should be no other dims of size 1
-                r_res = torch.tensordot(core, full_right, dims=[[-1], [0]])
-                # shape (r, r, ..., 1)
+                """
+                return torch.einsum(
+                    "i...j, jkl, l...m -> i...k", full_left, core, full_right
+                )
+                torch does not allow ellipsises to be of a different shape
+                """
+                print(full_right.shape, core.shape)
+                r_res = torch.einsum("bijk, bk...r -> bi...j", core, full_right)
+                """
+                # torch.tensordot(core, full_right, dims=[[-1], [1]])
+                # shape (b, r, r, ..., 1)
                 dims = list(range(len(r_res.shape)))
-                dims[1], dims[-1] = dims[-1], dims[1]
-                if self.verbose >= 2:
-                    print(dims)
+                dims[2], dims[-1] = dims[-1], dims[2]
 
                 r_res_prm = torch.permute(r_res, dims)
-                # shape (r, 1, ..., r)
-                r_res_prm = torch.squeeze(r_res_prm)
-                # shape (r, ..., r)
-                result = torch.tensordot(full_left, r_res_prm, dims=[[-1], [0]])
+                # shape (b, r, 1, ..., r)
+                if self.verbose >= 2:
+                    print(dims, "r", r_res_prm.shape)
 
-                # shape (1, ..., r)
+                r_res_prm = torch.squeeze(r_res_prm, 1)
+                # shape (b, r, ..., r)
+                """
+
+                orig_shape = r_res.shape
+                print("ls", r_res.shape, full_left.shape)
+
+                result = torch.einsum(
+                    "b...j, bja -> b...a",
+                    full_left,
+                    r_res.reshape(orig_shape[0], orig_shape[1], -1),
+                ).view(*full_left.shape[:-1], *orig_shape[2:])
+                # torch.tensordot(full_left, r_res, dims=[[-1], [1]])
+                if self.verbose >= 2:
+                    print("ls_fin", result.shape)
+
                 return result
 
     def scalar_product(
@@ -98,11 +161,11 @@ class HTuckerNode(object):
         # right Node is also of H Tucker format
         # returns 4-tensor
         if self.is_leaf:
-            ans = torch.einsum("ijk, ljm -> ilkm", self.content, right_node.content)
+            ans = torch.einsum("bijk, bljm -> bilkm", self.content, right_node.content)
             # ans = torch.tensordot(self.content, right_node.content, dims=[1, 1])
             if self.verbose >= 2:
                 print(ans.shape, "ans.shape")
-            assert len(ans.shape) == 4
+            assert len(ans.shape) == 5
             return ans
         else:
             assert len(self.content) == 3 and len(right_node.content) == 3
@@ -129,7 +192,7 @@ class HTuckerNode(object):
 
             if core_dimension_placement == "left":
                 return torch.einsum(
-                    "abij, ikl, jmn, lncd -> kmcd",
+                    "eabij, eikl, ejmn, elncd -> ekmcd",
                     l_result,
                     first_core,
                     second_core,
@@ -138,7 +201,7 @@ class HTuckerNode(object):
 
             if core_dimension_placement == "right":
                 return torch.einsum(
-                    "abij, ikl, jmn, lncd -> abkm",
+                    "eabij, eikl, ejmn, elncd -> eabkm",
                     l_result,
                     first_core,
                     second_core,
@@ -201,21 +264,28 @@ class FunctionalHTuckerNode(HTuckerNode):
         should be written in a recursive fashion
         """
 
-        if x.shape[0] != self.get_dimension():
-            print(x.shape[0], self.get_dimension())
+        if len(x.shape) == 1:
+            x = x.reshape(1, *x.shape)
+
+        batch_size = x.shape[0]
+
+        if x.shape[1] != self.get_dimension():
+            print(x.shape[1], self.get_dimension())
             raise ValueError
 
         if self.is_leaf:
-            return torch.Tensor([f(x) for f in self.content]).reshape(1, -1, 1)
+            return torch.stack([f(x) for f in self.content]).reshape(
+                batch_size, 1, -1, 1
+            )
 
         else:
             left_size = self.content[0].get_dimension()
-            x_left = x[:left_size]
-            x_right = x[left_size:]
+            x_left = x[:, :left_size]
+            x_right = x[:, left_size:]
             # this is a tensor of rank one, so middle core is very simple
             return [
                 self.content[0].get_val(x_left),
-                torch.ones(1, 1, 1),
+                torch.ones(batch_size, 1, 1, 1),
                 self.content[1].get_val(x_right),
             ]
 
