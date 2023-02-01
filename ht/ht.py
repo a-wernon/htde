@@ -4,7 +4,7 @@ from functools import partial
 
 
 class HTuckerNode(object):
-    def __init__(self, content, make_optim=False):
+    def __init__(self, content, make_optim=False, device="cpu"):
         # content is either a [left, core, right] or a leaf of torch.Tensor type
         # now no initialisation is done automatically,
         # so we just pass handcrafted version of content
@@ -20,6 +20,7 @@ class HTuckerNode(object):
                     self.content = torch.unsqueeze(self.content, 0)
                 if make_optim:
                     self.content.requires_grad_()
+                    self.content = self.content.to(device)
             else:
                 self.content = content.content.copy()
             self.is_leaf = content.is_leaf
@@ -28,7 +29,7 @@ class HTuckerNode(object):
             self.is_leaf = isinstance(self.content, torch.Tensor)
             if not self.is_leaf:
                 assert len(self.content) == 3
-                # for i in range(len(self.content)):
+
                 self.content[0] = HTuckerNode(self.content[0], make_optim=make_optim)
                 self.content[-1] = HTuckerNode(self.content[-1], make_optim=make_optim)
 
@@ -40,15 +41,16 @@ class HTuckerNode(object):
 
                 if make_optim:
                     self.content[1].requires_grad_()
+                    self.content[1] = self.content[1].to(device)
             else:
                 if len(self.content.shape) not in (3, 4):
                     raise ValueError
                 elif len(self.content.shape) == 3:
-                    print("fd")
                     self.content = torch.unsqueeze(self.content, 0)
 
                 if make_optim:
                     self.content.requires_grad_()
+                    self.content = self.content.to(device)
 
         self.verbose = 1
 
@@ -90,27 +92,14 @@ class HTuckerNode(object):
                 """
                 print(full_left.shape, core.shape)
                 l_res = torch.einsum("br...i, bijk -> bj...k", full_left, core)
-                """
-                # l_res = torch.tensordot(full_left, core, dims=[[-1], [1]])
-                # shape (b, 1, ..., r, r)
-                dims = list(range(len(l_res.shape)))
-                dims[1], dims[-2] = dims[-2], dims[1]
 
-                l_res_prm = torch.permute(l_res, dims)
-                # shape (b, r, ..., 1, r)
-                if self.verbose >= 2:
-                    print(dims, "l", l_res_prm.shape)
-
-                l_res_prm = torch.squeeze(l_res_prm, -2)
-                # shape (b, r, ..., r)
-                """
                 orig_shape = l_res.shape
                 result = torch.einsum(
                     "baj, bj...-> ba...",
                     l_res.reshape(orig_shape[0], -1, orig_shape[-1]),
                     full_right,
                 ).view(*orig_shape[:-1], *full_right.shape[2:])
-                # torch.tensordot(l_res, full_right, dims=[[-1], [1]])
+
                 if self.verbose >= 2:
                     print("rs", l_res.shape, full_right.shape)
                     print("rs_fin", result.shape)
@@ -126,20 +115,6 @@ class HTuckerNode(object):
                 """
                 print(full_right.shape, core.shape)
                 r_res = torch.einsum("bijk, bk...r -> bi...j", core, full_right)
-                """
-                # torch.tensordot(core, full_right, dims=[[-1], [1]])
-                # shape (b, r, r, ..., 1)
-                dims = list(range(len(r_res.shape)))
-                dims[2], dims[-1] = dims[-1], dims[2]
-
-                r_res_prm = torch.permute(r_res, dims)
-                # shape (b, r, 1, ..., r)
-                if self.verbose >= 2:
-                    print(dims, "r", r_res_prm.shape)
-
-                r_res_prm = torch.squeeze(r_res_prm, 1)
-                # shape (b, r, ..., r)
-                """
 
                 orig_shape = r_res.shape
                 print("ls", r_res.shape, full_left.shape)
@@ -149,7 +124,7 @@ class HTuckerNode(object):
                     full_left,
                     r_res.reshape(orig_shape[0], orig_shape[1], -1),
                 ).view(*full_left.shape[:-1], *orig_shape[2:])
-                # torch.tensordot(full_left, r_res, dims=[[-1], [1]])
+
                 if self.verbose >= 2:
                     print("ls_fin", result.shape)
 
