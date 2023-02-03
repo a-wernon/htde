@@ -253,11 +253,11 @@ class FunctionalHTuckerNode(HTuckerNode):
             raise ValueError
 
         if self.is_leaf:
-            return (
-                torch.stack([f(x) for f in self.content])
-                .reshape(batch_size, 1, -1, 1)
-                .to(device)
-            )
+            # quick workaround, fix asap
+            return torch.permute(
+                torch.stack([f(x) for f in self.content]).reshape(-1, 1, batch_size, 1),
+                (2, 1, 0, 3),
+            ).to(device)
 
         else:
             left_size = self.content[0].get_dimension()
