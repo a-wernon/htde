@@ -6,17 +6,12 @@ from time import perf_counter as tpc
 import torch
 
 
-from ht.node_np import Node as NodeNp
+from ht.node import Node
 
 
-def demo(device):
-    # TODO: for torch version
-    return
-
-
-def demo_np(k=1.E+5):
+def demo(k=1.E+5, device='cpu'):
     # Create random HT-tensor:
-    Y = NodeNp.random(n=[2]*8, r=[2, 3, 4])
+    Y = Node.random(n=[2]*8, r=[2, 3, 4], device=device)
     print(f'\nGenerated random HT-tensor:')
     print(Y)
 
@@ -25,11 +20,11 @@ def demo_np(k=1.E+5):
     print('\nShape of the full tensor: ', Y_full.shape)
 
     # Get batch of values for multi-indices:
-    I = np.array([
+    I = torch.tensor([
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 1, 1, 1, 1],
         [1, 1, 1, 1, 1, 1, 1, 1],
-    ], dtype=int)
+    ], dtype=torch.long, device=device)
     y = Y.get(I)
     print('\nValues of HT-tensor in several points: \n', y)
 
@@ -43,7 +38,7 @@ def demo_np(k=1.E+5):
     counts = np.unique([i @ pow2 for i in I], return_counts=True)[1]
     plt.plot(counts/sum(counts), linewidth=2)
     plt.plot(Y_full.flatten()/sum(Y_full.flatten()), '--', linewidth=1)
-    plt.savefig('result/sample_node_np.png')
+    plt.savefig('result/sample_node.png')
 
 
 if __name__ == '__main__':
@@ -59,4 +54,4 @@ if __name__ == '__main__':
     else:
         device = torch.device('cpu')
 
-    demo_np()
+    demo(device=device)
