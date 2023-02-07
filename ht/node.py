@@ -141,6 +141,18 @@ class Node():
         idx2 = self.R.sample(V[idx, :].squeeze())
         return idx1 + idx2
 
+        def scalar_product(self):
+        if self.is_leaf:
+            v = torch.einsum('jk->j', self.G)
+        else:
+            v = torch.einsum('ijk,i,k->j',
+                self.G, self.L.scalar_product(), self.R.scalar_product())
+
+        if self.is_root:
+            v = v.item()
+
+        return v
+
     def set_children(self, node_l, node_r):
         self.L = Node.build_node(node_l, self.level+1, self)
         self.R = Node.build_node(node_r, self.level+1, self)
