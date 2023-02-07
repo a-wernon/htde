@@ -37,7 +37,9 @@ def demo(k=1.E+5, device='cpu'):
     pow2 = 2**np.arange(8)[::-1]
     counts = np.unique([i @ pow2 for i in I], return_counts=True)[1]
     plt.plot(counts/sum(counts), linewidth=2)
-    plt.plot(Y_full.flatten()/sum(Y_full.flatten()), '--', linewidth=1)
+
+    y_full_ = Y_full.cpu().flatten()
+    plt.plot(y_full_/sum(y_full_), '--', linewidth=1)
     plt.savefig('result/sample_node.png')
 
 
