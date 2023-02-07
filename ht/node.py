@@ -141,7 +141,7 @@ class Node():
         idx2 = self.R.sample(V[idx, :].squeeze())
         return idx1 + idx2
 
-        def scalar_product(self):
+    def scalar_product(self):
         if self.is_leaf:
             v = torch.einsum('jk->j', self.G)
         else:
@@ -149,7 +149,7 @@ class Node():
                 self.G, self.L.scalar_product(), self.R.scalar_product())
 
         if self.is_root:
-            v = v.item()
+            v = v #.item()
 
         return v
 
