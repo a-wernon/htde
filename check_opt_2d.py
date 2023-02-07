@@ -26,13 +26,13 @@ def build_data(m, n):
     return I_trn
 
 
-def check(m=10000, n=100, r=10, epochs=100, batch=100, lr=1.E-4, samples=1.E+3, device='cpu'):
+def check(m=10000, n=100, r=3, epochs=20, batch=100, lr=1.E-4, samples=1.E+3, device='cpu'):
     I_trn = build_data(m, n)
 
     Y = Node.random(n=[n]*2, r=[r], device=device)
 
     def loss_func(I):
-        return Y.scalar_product() - 2 * torch.mean(Y.get(I))
+        return Y.scalar_product() - 2 * torch.sum(Y.get(I))
 
     params = [G.requires_grad_() for G in Y.to_core_list()]
     optimizer = torch.optim.Adam(params, lr=lr)
