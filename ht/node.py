@@ -143,13 +143,13 @@ class Node():
 
     def scalar_product(self):
         if self.is_leaf:
-            v = torch.einsum('jk->j', self.G)
+            v = torch.einsum('ik,jk->ij', self.G, self.G)
         else:
-            v = torch.einsum('ijk,i,k->j',
-                self.G, self.L.scalar_product(), self.R.scalar_product())
+            v = torch.einsum('ijk,abc,ia,kc->jb',
+                self.G, self.G, self.L.scalar_product(), self.R.scalar_product())
 
         if self.is_root:
-            v = v #.item()
+            v = v[0, 0]
 
         return v
 
