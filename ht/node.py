@@ -145,6 +145,14 @@ class Node():
         self.L = Node.build_node(node_l, self.level+1, self)
         self.R = Node.build_node(node_r, self.level+1, self)
 
+    def to_core_list(self):
+        res = [self.G]
+        if self.L is not None:
+            res.extend(self.L.to_core_list())
+        if self.R is not None:
+            res.extend(self.R.to_core_list())
+        return res
+
 
 def _find_next_free_num(arr):
     res = []
