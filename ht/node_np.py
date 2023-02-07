@@ -90,15 +90,6 @@ class Node():
     def is_root(self):
         return self.parent is None
 
-    def get(self, I, num=0):
-        if self.is_leaf:
-            return self.G[:, I[:, num]]
-
-        y = np.einsum('rsq,rk,qk->sk',
-            self.G, self.L.get(I, 2*num), self.R.get(I, 2*num+1))
-
-        return y[0] if self.is_root else y
-
     def full(self, res=None, num_up=0):
         need_eins = False
         if res is None:
@@ -121,6 +112,15 @@ class Node():
         if need_eins:
             return contract(*res)
 
+    def get(self, I, num=0):
+        if self.is_leaf:
+            return self.G[:, I[:, num]]
+
+        y = np.einsum('rsq,rk,qk->sk',
+            self.G, self.L.get(I, 2*num), self.R.get(I, 2*num+1))
+
+        return y[0] if self.is_root else y
+        
     def sample(self, up_mat=None):
         if up_mat is None: # For root node
             up_mat = np.ones(self.G.shape[1])
