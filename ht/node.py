@@ -32,7 +32,7 @@ class Node():
                 Node.random(n, r, level+1, 2*num+1, Y, device))
             return Y
         else: # Leaf
-            G = torch.rand(r[-1], n[num]).to(device)
+            G = torch.rand(r[level-1], n[num]).to(device)
             Y = Node.build_node(G, level, parent)
             return Y
 
@@ -156,12 +156,20 @@ class Node():
         self.L = Node.build_node(node_l, self.level+1, self)
         self.R = Node.build_node(node_r, self.level+1, self)
 
-    def to_core_list(self):
+    def to_core_list(self, copy=False, grad=False):
         res = [self.G]
         if self.L is not None:
             res.extend(self.L.to_core_list())
         if self.R is not None:
             res.extend(self.R.to_core_list())
+
+        if copy:
+            res = [G.clone() for G in res]
+
+        if grad:
+            for G in res:
+                G.requires_grad_()
+
         return res
 
 
