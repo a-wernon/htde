@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-
+import teneva
 
 class Node():
     @staticmethod
@@ -185,3 +185,70 @@ def _matrix_skeleton(A, e=1.E-10, r=1.E+12):
     r = max(1, min(int(r), len(s) - dlen))
     S = torch.diag(torch.sqrt(s[:r]))
     return U[:, :r] @ S, S @ V[:r, :]
+
+
+
+def U_from_A(A, s, l, rank=int(1e10)):
+    idx = np.arange(A.ndim)
+    idx[:l] = s + np.arange(l)
+    idx[s:s + l] = np.arange(l)
+    At = np.transpose(A, idx)
+    At = At.reshape(np.prod(A.shape[s:s + l]), -1)
+    U, _ = teneva.matrix_skeleton(At, r=rank,  give_to='r')
+    return U
+
+def trans_tensor(U_par, UL, UR):
+    llen = UL.shape[0]
+    rlen = UR.shape[0]
+    assert U_par.shape[0] == llen*rlen
+
+    U_par = U_par.reshape(llen, rlen, -1)
+
+    return np.einsum("ija,ib,jc->bac", U_par, UL, UR)
+
+def par_node(A, UL, UR):
+    llen = UL.shape[0]
+    rlen = UR.shape[0]
+    A = A.reshape(llen, rlen)
+
+    return (UL.T @ A @ UR)[:, None, :]
+
+
+def HTSVD(A, r):
+    d = A.ndim
+    levs = int(np.log2(d))
+    assert 2**levs == d, 'Number of dimensions must be pow of 2'
+
+    Us = []
+    for l in range(levs):
+        num = 2**l
+        Us.append([U_from_A(A, s, num, rank=3) for s in np.arange(d)[::num]])
+
+
+    Bs = []
+    for U_pars, U_childs in zip(Us[1:], Us[:-1]):
+        Bs.append( [trans_tensor(U_pars[i], U_childs[2*i], U_childs[2*i + 1]) 
+                   for i in range(len(U_pars))] )
+
+
+    Bs = Bs[::-1]
+    node0 = par_node(A, *Us[-1])
+
+    node0 = Node.build_node(torch.tensor(node0))
+    pars = [node0]
+    for l, B in enumerate(Bs, start=1):
+        new_pars = []
+        for p, L, R in zip(pars, B[::2], B[1::2]):
+            new_pars.extend([Node.build_node(torch.tensor(G), level=l, parent=p) for G in [L, R]])
+            p.set_children(new_pars[-2], new_pars[-1])
+
+        pars = new_pars
+
+    for par, L, R in zip(pars, Us[0][::2], Us[0][1::2]):
+        par.set_children(
+            Node.build_node(torch.tensor(L.T), level=levs, parent=par),
+            Node.build_node(torch.tensor(R.T), level=levs, parent=par)
+        )
+
+
+    return node0
