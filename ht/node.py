@@ -31,9 +31,10 @@ class Node():
                 Node.random(n, r, level+1, 2*num, Y, device),
                 Node.random(n, r, level+1, 2*num+1, Y, device))
             return Y
-
-        G = torch.rand(r[-1], n[num]).to(device) / 10 # Leaf TODO: remove 10 ;)
-        return Node.build_node(G, level, parent)
+        else: # Leaf
+            G = torch.rand(r[-1], n[num]).to(device)
+            Y = Node.build_node(G, level, parent)
+            return Y
 
     def __init__(self, G, level=0, parent=None):
         self.G = G            # Core for node (2D or 3D torch.tensor)
@@ -79,17 +80,18 @@ class Node():
 
     @property
     def is_leaf(self):
-        return self.L is None or self.R is None
+        return self.L is None and self.R is None
 
     @property
     def is_root(self):
         return self.parent is None
 
     def full(self, res=None, num_up=0):
-        need_eins = False
         if res is None:
             res = [torch.tensor([1], device=self.G.device), [0]]
             need_eins = True
+        else:
+            need_eins = False
 
         if self.is_root:
             res.extend([self.G, [1, 0, 2]])
@@ -145,13 +147,10 @@ class Node():
         if self.is_leaf:
             v = torch.einsum('ik,jk->ij', self.G, self.G)
         else:
-            v = torch.einsum('ijk,abc,ia,kc->jb',
-                self.G, self.G, self.L.scalar_product(), self.R.scalar_product())
+            v = torch.einsum('ijk,abc,ia,kc->jb', self.G, self.G,
+                self.L.scalar_product(), self.R.scalar_product())
 
-        if self.is_root:
-            v = v[0, 0]
-
-        return v
+        return v[0, 0] if self.is_root else v
 
     def set_children(self, node_l, node_r):
         self.L = Node.build_node(node_l, self.level+1, self)

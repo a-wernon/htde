@@ -28,6 +28,12 @@ def demo(k=1.E+5, device='cpu'):
     y = Y.get(I)
     print('\nValues of HT-tensor in several points: \n', y)
 
+    # Check scalar product:
+    v1 = torch.sum(Y_full * Y_full).item()
+    v2 = Y.scalar_product().item()
+    e = abs((v1-v2) / v1)
+    print(f'\nScalar product error: {e:-7.1e}')
+
     # Sample from the tensor:
     _time = tpc()
     I = [Y.sample() for _ in range(int(k))]
