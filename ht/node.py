@@ -66,10 +66,7 @@ class Node():
         return text
 
     @property
-    def convolv(self, force=False):
-        if not force and self._convolv is not None:
-            return self._convolv
-
+    def convolv(self):
         if self.is_leaf:
             self._convolv = torch.einsum('jk->j', self.G)
         else:
