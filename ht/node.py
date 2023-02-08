@@ -222,7 +222,7 @@ def HTSVD(A, r):
     Us = []
     for l in range(levs):
         num = 2**l
-        Us.append([U_from_A(A, s, num, rank=3) for s in np.arange(d)[::num]])
+        Us.append([U_from_A(A, s, num, rank=r) for s in np.arange(d)[::num]])
 
 
     Bs = []
